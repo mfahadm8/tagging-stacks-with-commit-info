@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Sample Codebuild project for Tagging GitHistory to CFT Stacks"
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: CommitInfoCodeBuildTestProject
+  
+  BuildspecPath:
+    Type: String 
+    Default: "codebuild/buildspec.yml"
+  
+  RepositoryURL:
+    Type: String 
+
+Resources:
+  CommitInfoCodeBuildTestProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Ref ProjectName
+      Source: 
+        BuildSpec: !Ref BuildspecPath
+        GitCloneDepth: 1
+        GitSubmodulesConfig: 
+          FetchSubmodules: false
+        InsecureSsl: false
+        Location: !Ref RepositoryURL
+        ReportBuildStatus: false
+        Type: "GITHUB_ENTERPRISE"
+      Artifacts: 
+        Type: "NO_ARTIFACTS"
+      Cache: 
+        Type: "NO_CACHE"
+      Environment: 
+        ComputeType: "BUILD_GENERAL1_SMALL"
+        Image: "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
+        ImagePullCredentialsType: "CODEBUILD"
+        Type: "LINUX_CONTAINER"
+      LogsConfig: 
+        CloudWatchLogs: 
+          Status: "ENABLED"
+          GroupName: "codebuild"
+          StreamName: !Ref ProjectName
+      Triggers:
+        Webhook: true
+        FilterGroups:
+          - - Type: EVENT
+              Pattern: PULL_REQUEST_CREATED,PULL_REQUEST_UPDATED
+            - Type: BASE_REF
+              Pattern: ^refs/heads/main
+              ExcludeMatchedPattern: false
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/main
+      Visibility: "PRIVATE"
+      ServiceRole: !GetAtt CommitInfoCodeBuildTestProjectIAMRole.Arn 
+      TimeoutInMinutes: 240
+      QueuedTimeoutInMinutes: 480
+      BadgeEnabled: true
+
+  CommitInfoCodeBuildTestProjectIAMRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/service-role/"
+      RoleName: !Sub "codebuild-${ProjectName}-service-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"   
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+      MaxSessionDuration: 3600
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/AdministratorAccess"
+      Policies:
+        - PolicyName: !Sub CodeBuildBasePolicy-${ProjectName}-${AWS::Region}
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*"

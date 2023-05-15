@@ -1,0 +1,38 @@
+version: 0.2
+
+phases:
+  build:
+    commands:
+      - |
+        echo "Starting build"
+        GIT_MESSAGE=$(git log --pretty=oneline $CODEBUILD_RESOLVED_SOURCE_VERSION | grep $CODEBUILD_RESOLVED_SOURCE_VERSION | sed "s/$CODEBUILD_RESOLVED_SOURCE_VERSION//" | sed 's/[^a-zA-Z0-9 _.:/=+\\@\-]//g')
+        GIT_AUTHOR=$(git log --format='%ae' $CODEBUILD_RESOLVED_SOURCE_VERSION | head -1 | sed 's/[^a-zA-Z0-9 _.:/=+\\@\-]//g')
+        GIT_BRANCH="$(git symbolic-ref HEAD --short 2>/dev/null)"
+        if [ "$CODEBUILD_GIT_BRANCH" = "" ] ; then
+          GIT_BRANCH="$(git rev-parse HEAD | xargs git name-rev | cut -d' ' -f2 | sed 's/remotes\/origin\///g')";
+        fi
+        GIT_COMMIT_ID=$CODEBUILD_RESOLVED_SOURCE_VERSION 
+        GIT_REPO=$(basename `git rev-parse --show-toplevel`)
+        echo "########"
+        echo $GIT_MESSAGE $GIT_AUTHOR $GIT_BRANCH $GIT_COMMIT_ID $GIT_REPO
+
+        tags=()
+        if [ -n "$GIT_REPO" ]; then
+          tags+=("gitRepo=$GIT_REPO")
+        fi
+        if [ -n "$GIT_BRANCH" ]; then
+          tags+=("gitBranch=$GIT_BRANCH")
+        fi
+        if [ -n "$GIT_COMMIT_ID" ]; then
+          tags+=("gitCommitId=$GIT_COMMIT_ID")
+        fi
+        if [ -n "$GIT_MESSAGE" ]; then
+          tags+=("gitMessage=\"$GIT_MESSAGE\"")
+        fi
+        if [ -n "$GIT_AUTHOR" ]; then
+          tags+=("gitAuthor=$GIT_AUTHOR")
+        fi
+
+        echo "${tags[@]}"
+        DEPLOY_COMMAND="aws cloudformation deploy --template-file codebuild/template.yaml --stack-name "NoResourceTestCft" --tags "${tags[@]}" --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND --disable-rollback"
+        eval $(echo $DEPLOY_COMMAND)
